@@ -94,7 +94,7 @@ allowing us to write
 
 ![20171220231958](./pics/4.png)
 
-Together, $$T$$ and $$Ω$$ define what is known in the robotics literature as a velocity screw 
+Together, $$T$$ and $$Ω$$ define what is known in the robotics literature as a velocity screw.
 
 ![20171220232025](./pics/5.png)
 
@@ -108,15 +108,19 @@ A point, $$^{c}P = [x, y, z]^T$$ , whose coordinates are expressed with respect 
 
 #### III.Example
 
-Suppose that the end-effector is moving with angular velocity $$Ω(t)$$ and translational velocity $$T$$ both with respect to the camera frame in a xed camera system. Let $$p$$ be a point **rigidly** attached to the end-effector. The velocity of the point $$p$$, expressed relative to the camera frame, is given by 
+Suppose that the end-effector is moving with angular velocity $$Ω(t)$$ and translational velocity $$T$$ both with respect to the camera frame in a fixed camera system. Let $$P$$ be a point **rigidly** attached to the end-effector. The velocity of the point $$P$$, expressed relative to the camera frame, is given by 
 
 ![20171220232711](./pics/6.png)
 
-To simplify notation, let $$^{c}\dot{P} = [x, y,z]^T $$. we can write the derivatives of the coordinates of p in terms of the image feature parameters $$u,v$$ as 
+To simplify notation, let $$^{c}P = [x, y,z]^T $$. we can write the derivatives of the coordinates of p in terms of the image feature parameters $$u,v$$ as 
 
 ![20171220232059](./pics/7.png)
 
-Now, let $$f = [u, v]^T$$ , as above and using the quotient rule 
+Now, let $$f = [u, v]^T$$ , because 
+
+![13](./pics/13.png)
+
+then we can get
 
 ![10](./pics/10.png)
 
@@ -128,13 +132,7 @@ which is an important result relating image-plane velocity of a point to the rel
 
 visual control by simply stacking the Jacobians for each pair of image point coordinates
 
-
-
 ![20171220232114](./pics/8.png)
-
-![20171220232135](./pics/135.png)
-
-
 
 ## 4.code
 
@@ -184,6 +182,7 @@ class VisualServo(object):
 
     @classmethod
     def _velocityTranMatrix(cls, Tx2x):
+        #TODO
         R_cr = Tx2x[0:3, 0:3]
         t_cr = Tx2x[0:3, 3].reshape(3,1)
         sk_t = cls.skewMatrix(t_cr)
@@ -238,12 +237,22 @@ class VisualServoImageBase(VisualServo):
 
     @classmethod
     def matchPP(cls, intrinsic, objPts_2xn, tarPts_2xn, z_1xn, Tc2x, mask=(1,1,1,1,1,1)):
+        """
+        作用：求单个相机的jacobian矩阵
+        参数：
+        intrinsic:单个相机的内参
+        objPts_2xn:移动点，如果是眼手，就是两个洞孔坐标。如果是固定相机，就是两个针脚坐标。
+        tarPts_2xn：目标点，在图像中我们想要到达的点，如果是眼手，就是针脚在图像中的坐标。如果是固定相机，就是两个洞孔坐标。
+        z_1xn：移动点在相机坐标系中的深度。
+        Tc2x：因为移动点是在相机坐标系中表示的，因此需要将相机坐标系转到其他坐标系。比如robot base和tool，一般选用前者。 
+        mask：过滤掉jacobian的某些列，否则有可能会出错？
+        """
         assert len(objPts_2xn.shape)==2 and objPts_2xn.shape[0] == 2, 'ObjPts is not a 2 by N matrix'
         assert len(objPts_2xn.shape)==2 and objPts_2xn.shape[0] == 2, 'TarPts is not a 2 by N matrix'
         assert isinstance(z_1xn, np.ndarray), 'z_1byN must be ndarray'
         assert objPts_2xn.shape[1] == tarPts_2xn.shape[1] and objPts_2xn.shape[1] == z_1xn.shape[1], 'N must be the same'
         assert objPts_2xn.shape[1] > 0, 'N must bigger than 0'
-		# 将速度从camera坐标系转换到x坐标系中（x:robot base或者tool），转换对象是tool还是目标？
+		# 将速度从camera坐标系转换到x坐标系中（x:robot base或者tool）
         velocity_matrix_c2r = cls._velocityTranMatrix(Tx2x=Tc2x)
         J = None
         ef = None
@@ -251,6 +260,7 @@ class VisualServoImageBase(VisualServo):
             Jtemp = cls._calImageJacobian(intrinsic=intrinsic, x=objPts_2xn[0,i], y=objPts_2xn[1, i], z=z_1xn[0, i])
             # 将jacobian矩阵转换到以robot base为参考坐标系
             Jtemp = np.dot(Jtemp, np.linalg.inv(velocity_matrix_c2r))
+            # ef：f-fd
             eftemp = (objPts_2xn[:, i] - tarPts_2xn[:, i]).reshape(2,1)
             if i == 0:
                 J  = copy.deepcopy(Jtemp)
@@ -258,7 +268,7 @@ class VisualServoImageBase(VisualServo):
             else:
                 J  = np.vstack((J, Jtemp))
                 ef = np.vstack((ef, eftemp))
-        #由于只用了两个相机，jcobian矩阵的行数为4，这样可能导致jcobian矩阵无法求逆。因此通过mask掉某些列来解决。
+        # 用mask对jacobian矩阵进行过滤，j:4x6
         J = cls.filterMoveDimension(JMatrix=J, mask=mask)
         return J, ef
 
@@ -282,6 +292,7 @@ class VisualServoImageBase(VisualServo):
             else:
                 J = np.vstack((J, TempJ))
                 Ef = np.vstack((Ef, TempEf))
+        # 对jacobian矩阵求伪逆
         Velocity = np.linalg.pinv(J).dot(Ef)
         return Velocity
 
